@@ -1,12 +1,11 @@
 import logging
-import time
-import uuid
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from fake_system.common.logs import get_logger
+from fake_system.common.web import add_request_logging
 from fake_system.payments.app.store import ChargeStore, PostgresStore
 
 SERVICE = "payments"
@@ -42,24 +41,7 @@ def create_app(store: ChargeStore | None = None,
 
     app = FastAPI(title="payments", lifespan=lifespan)
 
-    @app.middleware("http")
-    async def log_requests(request: Request, call_next):
-        request_id = request.headers.get("x-request-id") or uuid.uuid4().hex
-        request.state.request_id = request_id
-        start = time.perf_counter()
-        response = await call_next(request)
-        response.headers["x-request-id"] = request_id
-        log.info(
-            "request completed",
-            extra={
-                "event": "request_completed",
-                "route": request.url.path,
-                "status": response.status_code,
-                "duration_ms": round((time.perf_counter() - start) * 1000, 1),
-                "request_id": request_id,
-            },
-        )
-        return response
+    add_request_logging(app, log)
 
     @app.get("/health")
     def health() -> dict:
