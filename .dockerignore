@@ -1,0 +1,9 @@
+.git
+.venv
+.sherlog
+runs
+tests
+**/__pycache__
+.pytest_cache
+.env
+sherlog.local.toml

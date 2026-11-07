@@ -92,15 +92,22 @@ def get_logger(service: str) -> logging.Logger:
     """
     logger = logging.getLogger(f"fake_system.{service}")
     logger.handlers.clear()
-    handler = logging.StreamHandler(sys.stdout)
-    handler.setFormatter(
-        JsonFormatter(
-            service=service,
-            version=os.environ.get("SHERLOG_VERSION", "unknown"),
-            commit=os.environ.get("SHERLOG_COMMIT", "unknown"),
-        )
+    formatter = JsonFormatter(
+        service=service,
+        version=os.environ.get("SHERLOG_VERSION", "unknown"),
+        commit=os.environ.get("SHERLOG_COMMIT", "unknown"),
     )
-    logger.addHandler(handler)
+    stdout = logging.StreamHandler(sys.stdout)
+    stdout.setFormatter(formatter)
+    logger.addHandler(stdout)
+    # Also ship to Elasticsearch when configured (set in docker-compose).
+    es_url = os.environ.get("ELASTICSEARCH_URL")
+    if es_url:
+        from fake_system.common.shipper import ElasticsearchHandler
+
+        shipper = ElasticsearchHandler(url=es_url)
+        shipper.setFormatter(formatter)
+        logger.addHandler(shipper)
     logger.setLevel(logging.INFO)
     logger.propagate = False
     return logger

@@ -1,0 +1,102 @@
+# The fake production system: 3 services + Postgres, Redis, Elasticsearch.
+# Logs flow: service -> JSON line -> stdout + Elasticsearch (sherlog-logs-*).
+x-service-env: &service-env
+  ELASTICSEARCH_URL: http://elasticsearch:9200
+  SHERLOG_COMMIT: ${SHERLOG_COMMIT:-base}
+
+x-healthcheck: &py-health
+  test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+  interval: 10s
+  timeout: 3s
+  retries: 10
+  start_period: 5s
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: sherlog
+    ports: ["5432:5432"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d sherlog"]
+      interval: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 10
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.15.0
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: -Xms512m -Xmx512m
+    ports: ["9200:9200"]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:9200/_cluster/health || exit 1"]
+      interval: 5s
+      retries: 30
+      start_period: 20s
+
+  # One-shot: installs the log index template before any service writes logs.
+  es-init:
+    image: curlimages/curl:8.10.1
+    depends_on:
+      elasticsearch: {condition: service_healthy}
+    volumes:
+      - ./fake_system/elasticsearch/logs-template.json:/template.json:ro
+    command: ["-fsS", "-X", "PUT", "http://elasticsearch:9200/_index_template/sherlog-logs",
+              "-H", "Content-Type: application/json", "--data-binary", "@/template.json"]
+    restart: "no"
+
+  payments:
+    build: {context: ., dockerfile: fake_system/payments/Dockerfile}
+    environment:
+      <<: *service-env
+      SHERLOG_VERSION: ${PAYMENTS_VERSION:-v1.0.0}
+      PAYMENTS_DB_DSN: postgresql://postgres:postgres@postgres:5432/sherlog
+    ports: ["8003:8000"]
+    depends_on:
+      postgres: {condition: service_healthy}
+      es-init: {condition: service_completed_successfully}
+    healthcheck: *py-health
+
+  inventory:
+    build: {context: ., dockerfile: fake_system/inventory/Dockerfile}
+    environment:
+      <<: *service-env
+      SHERLOG_VERSION: ${INVENTORY_VERSION:-v1.0.0}
+      INVENTORY_DB_DSN: postgresql://postgres:postgres@postgres:5432/sherlog
+    ports: ["8002:8000"]
+    depends_on:
+      postgres: {condition: service_healthy}
+      es-init: {condition: service_completed_successfully}
+    healthcheck: *py-health
+
+  checkout:
+    build: {context: ., dockerfile: fake_system/checkout/Dockerfile}
+    environment:
+      <<: *service-env
+      SHERLOG_VERSION: ${CHECKOUT_VERSION:-v1.0.0}
+      INVENTORY_URL: http://inventory:8000
+      PAYMENTS_URL: http://payments:8000
+    ports: ["8001:8000"]
+    depends_on:
+      inventory: {condition: service_healthy}
+      payments: {condition: service_healthy}
+      es-init: {condition: service_completed_successfully}
+    healthcheck: *py-health
+
+  loadgen:
+    build: {context: ., dockerfile: fake_system/seed/Dockerfile}
+    environment:
+      CHECKOUT_URL: http://checkout:8000
+      LOADGEN_RPS: ${LOADGEN_RPS:-2}
+    depends_on:
+      checkout: {condition: service_healthy}

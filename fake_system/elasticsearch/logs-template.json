@@ -1,0 +1,76 @@
+{
+  "index_patterns": [
+    "sherlog-logs-*"
+  ],
+  "template": {
+    "settings": {
+      "number_of_shards": 1,
+      "number_of_replicas": 0
+    },
+    "mappings": {
+      "date_detection": false,
+      "properties": {
+        "@timestamp": {
+          "type": "date"
+        },
+        "service": {
+          "type": "keyword"
+        },
+        "version": {
+          "type": "keyword"
+        },
+        "commit": {
+          "type": "keyword"
+        },
+        "level": {
+          "type": "keyword"
+        },
+        "event": {
+          "type": "keyword"
+        },
+        "message": {
+          "type": "text"
+        },
+        "request_id": {
+          "type": "keyword"
+        },
+        "trace_id": {
+          "type": "keyword"
+        },
+        "route": {
+          "type": "keyword"
+        },
+        "status": {
+          "type": "integer"
+        },
+        "duration_ms": {
+          "type": "float"
+        },
+        "error": {
+          "properties": {
+            "type": {
+              "type": "keyword"
+            },
+            "stack": {
+              "type": "text"
+            }
+          }
+        },
+        "extra": {
+          "type": "object"
+        }
+      },
+      "dynamic_templates": [
+        {
+          "extra_strings_as_keyword": {
+            "path_match": "extra.*",
+            "match_mapping_type": "string",
+            "mapping": {
+              "type": "keyword"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

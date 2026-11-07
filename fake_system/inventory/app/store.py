@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS stock (
     quantity INTEGER NOT NULL CHECK (quantity >= 0)
 )
 """
-SEED = [("sku-apple", 100), ("sku-banana", 100), ("sku-cherry", 5)]
+SEED = [("sku-apple", 1_000_000), ("sku-banana", 1_000_000), ("sku-cherry", 5)]
 
 
 class InventoryStore(Protocol):
